@@ -1,4 +1,4 @@
-import json
+
 
 from google import genai
 from google.genai import types
@@ -15,7 +15,7 @@ Requirements:
 """
 
 
-def stt(audio_path) -> dict:
+def stt(audio_path) -> str:
     autio_file = client.files.upload(file=str(audio_path))
 
     response = client.models.generate_content(
@@ -53,4 +53,4 @@ def stt(audio_path) -> dict:
         ),
     )
 
-    return json.loads(response.text)
+    return response.text

@@ -18,6 +18,14 @@ if __name__ == '__main__':
     output_path = output_path / f'{file_name}.json'
 
     response = stt(input_path)
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(response, f, ensure_ascii=False, indent=2)
-    print(f'✅ Transcript saved to {output_path}')
+
+    try:
+        result = json.loads(response)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        print(f'✅ Transcript saved to {output_path}')
+    except json.JSONDecodeError:
+        fallback_path = output_path.with_suffix('.txt')
+        with open(fallback_path, 'w', encoding='utf-8') as f:
+            f.write(response)
+        print(f'⚠️ JSON 解析失敗，原始回應已儲存至 {fallback_path}')
