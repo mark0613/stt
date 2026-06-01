@@ -12,6 +12,7 @@ Requirements:
 1. Identify distinct speakers (e.g., Speaker 1, Speaker 2, or names if context allows).
 2. Provide accurate timestamps for each segment (Format: MM:SS).
 3. Detect the primary language code of each segment (e.g., zh, en, ja).
+4. Do not be lazy. Transcribe verbatim word-for-word, do not summarize.
 """
 
 
