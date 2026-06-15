@@ -20,7 +20,7 @@ def stt(audio_path) -> str:
     autio_file = client.files.upload(file=str(audio_path))
 
     response = client.models.generate_content(
-        model='gemini-3-flash-preview',
+        model='gemini-3.5-flash',
         contents=[
             types.Content(
                 parts=[
