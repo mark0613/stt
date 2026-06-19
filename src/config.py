@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -5,3 +6,27 @@ from dotenv import load_dotenv
 load_dotenv('.env', override=True)
 
 BASE_DIR = Path(__file__).parent.parent
+
+# Gemini model
+GEMINI_MODEL = os.getenv('GEMINI_STT_MODEL', 'gemini-3.5-flash')
+GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv('GEMINI_MAX_OUTPUT_TOKENS', '65536'))
+GEMINI_THINKING_BUDGET = int(os.getenv('GEMINI_THINKING_BUDGET', '0'))
+GEMINI_TRANSIENT_RETRIES = int(os.getenv('GEMINI_STT_TRANSIENT_RETRIES', '3'))
+GEMINI_TRANSIENT_RETRY_DELAY = int(os.getenv('GEMINI_STT_TRANSIENT_RETRY_DELAY_SECONDS', '60'))
+
+# Audio chunking
+SILENCE_NOISE_DB = float(os.getenv('CHUNKED_SILENCE_NOISE_DB', '-30'))
+SILENCE_MIN_DURATION = float(os.getenv('CHUNKED_SILENCE_MIN_DURATION', '0.5'))
+TARGET_CHUNK_SECONDS = int(os.getenv('CHUNKED_TARGET_SECONDS', '720'))
+MAX_CHUNK_SECONDS = int(os.getenv('CHUNKED_MAX_SECONDS', '1500'))
+
+# STT pipeline
+TAIL_CONTEXT_SEGMENTS = int(os.getenv('CHUNKED_TAIL_CONTEXT_SEGMENTS', '5'))
+MAX_CHUNK_CONTINUATIONS = int(os.getenv('CHUNKED_MAX_CONTINUATIONS', '10'))
+PREMATURE_STOP_GAP_SECONDS = int(os.getenv('CHUNKED_PREMATURE_STOP_GAP', '60'))
+PREMATURE_STOP_RETRIES = int(os.getenv('CHUNKED_PREMATURE_STOP_RETRIES', '2'))
+
+# Pricing
+AUDIO_INPUT_PRICE_PER_M = 3.50
+OUTPUT_PRICE_PER_M = 9.00
+USD_TO_TWD = 32.0
