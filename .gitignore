@@ -14,3 +14,13 @@ wheels/
 
 # Output directory
 output/
+
+# Tmp
+tmp/
+
+# coding agent
+.agents/worktrees
+.claude/worktrees
+.claude/skills
+.planning/
+.playwright-mcp/

@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/certs/**)",
+      "Read(**/secrets/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Edit(**/.env)",
+      "Edit(**/.env.*)",
+      "Write(**/.env)",
+      "Write(**/.env.*)",
+      "Read(!**/.env.example)",
+      "Edit(!**/.env.example)",
+      "Write(!**/.env.example)"
+    ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "denyRead": [
+        "~/.ssh",
+        ".env",
+        ".env.local",
+        ".env.production"
+      ]
+    }
+  },
+  "enabledPlugins": {
+    "claude-mem@thedotmack": true
+  }
+}
