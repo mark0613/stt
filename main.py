@@ -2,7 +2,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from src.stt import transcribe
+from rich.console import Console
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
+
+from src.logging_setup import setup_logging
+from src.stt import ProgressHooks, transcribe
 
 
 def main() -> None:
@@ -18,18 +22,62 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f'{input_path.stem}.json'
 
+    console = Console()
+    log_path = setup_logging(input_path)
+
     try:
-        transcribe(
+        _run_with_progress(
+            console,
             input_path,
-            output_path=output_path,
+            output_path,
             speaker_count=args.num_speakers,
             extra_instructions=args.prompt,
         )
     except Exception as error:
-        print(f'STT failed: {error}')
+        console.print(f'[bold red]轉錄失敗：[/bold red]{error}')
+        console.print(f'[dim]詳細 log：\n{log_path}[/dim]')
         sys.exit(1)
 
-    print(f'Transcript saved to {output_path}')
+    console.print(f'[bold green]完成[/bold green] 逐字稿已存到 {output_path}')
+    console.print(f'[dim]詳細 log：\n{log_path}[/dim]')
+
+
+def _run_with_progress(
+    console: Console,
+    input_path: Path,
+    output_path: Path,
+    speaker_count: int | None,
+    extra_instructions: str | None,
+) -> None:
+    progress = Progress(
+        TextColumn('[progress.description]{task.description}'),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    )
+
+    with progress:
+        upload_task = progress.add_task('上傳', total=None)
+        transcribe_task = progress.add_task('轉錄', total=None)
+
+        def on_chunks_ready(n: int) -> None:
+            progress.update(upload_task, total=n)
+            progress.update(transcribe_task, total=n)
+
+        hooks = ProgressHooks(
+            on_chunks_ready=on_chunks_ready,
+            on_upload_done=lambda: progress.advance(upload_task),
+            on_chunk_done=lambda: progress.advance(transcribe_task),
+        )
+
+        transcribe(
+            input_path,
+            output_path=output_path,
+            speaker_count=speaker_count,
+            extra_instructions=extra_instructions,
+            hooks=hooks,
+        )
 
 
 if __name__ == '__main__':

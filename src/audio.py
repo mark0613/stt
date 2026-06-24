@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import src.config as cfg
+from src.logging_setup import get_logger
+
+log = get_logger('audio')
 
 
 @dataclass
@@ -20,10 +23,10 @@ class Chunk:
         return self.end_sec - self.start_sec
 
 
-def split_audio(audio_path: Path, tmpdir: Path, log=print) -> list[Chunk]:
+def split_audio(audio_path: Path, tmpdir: Path) -> list[Chunk]:
     total_duration = audio_duration(audio_path)
     midpoints = silence_midpoints(audio_path)
-    cut_points = choose_cut_points(midpoints, total_duration, log)
+    cut_points = choose_cut_points(midpoints, total_duration)
 
     starts = [0.0] + cut_points
     ends = cut_points + [total_duration]
@@ -64,7 +67,7 @@ def silence_midpoints(audio_path: Path) -> list[float]:
     return [(s + e) / 2 for s, e in zip(starts, ends)]
 
 
-def choose_cut_points(midpoints: list[float], total_duration: float, log=print) -> list[float]:
+def choose_cut_points(midpoints: list[float], total_duration: float) -> list[float]:
     if not midpoints or total_duration <= cfg.TARGET_CHUNK_SECONDS:
         return []
 
@@ -80,11 +83,11 @@ def choose_cut_points(midpoints: list[float], total_duration: float, log=print) 
         if candidates:
             best = min(candidates, key=lambda p: abs(p - target))
             cut_points.append(best)
-            log(f'cut at silence={best:.1f}s (target={target:.1f}s, cursor={cursor:.1f}s)')
+            log.info(f'cut at silence={best:.1f}s (target={target:.1f}s, cursor={cursor:.1f}s)')
             cursor = best
         else:
             hard_cut = cursor + cfg.TARGET_CHUNK_SECONDS
-            log(f'warning: no silence within {cfg.MAX_CHUNK_SECONDS}s of cursor={cursor:.1f}s, hard-cutting at {hard_cut:.1f}s')
+            log.info(f'warning: no silence within {cfg.MAX_CHUNK_SECONDS}s of cursor={cursor:.1f}s, hard-cutting at {hard_cut:.1f}s')
             cut_points.append(hard_cut)
             cursor = hard_cut
 

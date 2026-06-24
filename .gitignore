@@ -18,6 +18,9 @@ output/
 # Tmp
 tmp/
 
+# Logs
+logs/
+
 # coding agent
 .agents/worktrees
 .claude/worktrees

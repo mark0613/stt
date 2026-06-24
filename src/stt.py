@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,6 +11,7 @@ from threading import Lock
 import src.config as cfg
 from src.audio import Chunk, split_audio
 from src.gemini import build_prompt, call_gemini, upload_audio
+from src.logging_setup import get_logger
 from src.models import TranscriptResult, TranscriptSegment
 from src.utils import (
     finish_reason_name,
@@ -17,8 +19,30 @@ from src.utils import (
     parse_segments,
     response_text,
     timestamp_seconds,
-    utc_now,
 )
+
+log = get_logger('stt')
+
+
+@dataclass
+class ProgressHooks:
+    """Callbacks for driving an external progress UI. All optional."""
+
+    on_chunks_ready: Callable[[int], None] | None = None
+    on_upload_done: Callable[[], None] | None = None
+    on_chunk_done: Callable[[], None] | None = None
+
+    def chunks_ready(self, n: int) -> None:
+        if self.on_chunks_ready:
+            self.on_chunks_ready(n)
+
+    def upload_done(self) -> None:
+        if self.on_upload_done:
+            self.on_upload_done()
+
+    def chunk_done(self) -> None:
+        if self.on_chunk_done:
+            self.on_chunk_done()
 
 
 @dataclass
@@ -55,7 +79,7 @@ class TokenUsage:
 
     def log(self) -> None:
         s = self.summary()
-        _log(
+        log.info(
             f'[token usage] calls={s["calls"]} '
             f'prompt={s["prompt_tokens"]} output={s["output_tokens"]} '
             f'thinking={s["thinking_tokens"]} '
@@ -68,23 +92,26 @@ def transcribe(
     output_path: str | Path | None = None,
     speaker_count: int | None = None,
     extra_instructions: str | None = None,
+    hooks: ProgressHooks | None = None,
 ) -> TranscriptResult:
     audio_path = Path(audio_path)
+    hooks = hooks or ProgressHooks()
     usage = TokenUsage()
 
-    _log(f'start audio={audio_path}')
+    log.info(f'start audio={audio_path}')
 
     with tempfile.TemporaryDirectory(prefix='stt_chunks_') as tmpdir:
-        chunks = split_audio(audio_path, Path(tmpdir), log=_log)
-        _log(f'split into {len(chunks)} chunks')
+        chunks = split_audio(audio_path, Path(tmpdir))
+        log.info(f'split into {len(chunks)} chunks')
+        hooks.chunks_ready(len(chunks))
 
         # Upload all chunks in parallel, then transcribe in order
         # (transcription is sequential to preserve tail_context continuity)
-        chunk_uris = _upload_chunks_parallel(chunks)
+        chunk_uris = _upload_chunks_parallel(chunks, hooks)
 
         all_segments: list[TranscriptSegment] = []
         for chunk in chunks:
-            _log(
+            log.info(
                 f'chunk {chunk.idx}/{len(chunks)} '
                 f'start={chunk.start_sec:.1f}s end={chunk.end_sec:.1f}s duration={chunk.duration:.1f}s'
             )
@@ -96,11 +123,12 @@ def transcribe(
                 chunk, chunk_uris[chunk.idx], tail_context, usage,
                 speaker_count=speaker_count, extra_instructions=extra_instructions,
             )
-            _log(f'chunk {chunk.idx} got {len(chunk_segments)} segments before merge')
+            log.info(f'chunk {chunk.idx} got {len(chunk_segments)} segments before merge')
 
             offset_segments = _offset_segments(chunk_segments, chunk.start_sec)
             all_segments, added = merge_segments(all_segments, offset_segments)
-            _log(f'chunk {chunk.idx} added {added} segments total={len(all_segments)}')
+            log.info(f'chunk {chunk.idx} added {added} segments total={len(all_segments)}')
+            hooks.chunk_done()
 
     usage.log()
 
@@ -111,7 +139,7 @@ def transcribe(
     return result
 
 
-def _upload_chunks_parallel(chunks: list[Chunk]) -> dict[int, str]:
+def _upload_chunks_parallel(chunks: list[Chunk], hooks: ProgressHooks) -> dict[int, str]:
     """Upload all chunks concurrently. Returns {chunk.idx: uri}."""
     uris: dict[int, str] = {}
     with ThreadPoolExecutor(max_workers=len(chunks)) as executor:
@@ -122,13 +150,14 @@ def _upload_chunks_parallel(chunks: list[Chunk]) -> dict[int, str]:
         for future in as_completed(futures):
             chunk = futures[future]
             uris[chunk.idx] = future.result()
+            hooks.upload_done()
     return uris
 
 
 def _upload_one(chunk: Chunk) -> str:
-    _log(f'chunk {chunk.idx} upload start path={chunk.path}')
+    log.info(f'chunk {chunk.idx} upload start path={chunk.path}')
     uri = upload_audio(str(chunk.path))
-    _log(f'chunk {chunk.idx} upload complete uri={uri}')
+    log.info(f'chunk {chunk.idx} upload complete uri={uri}')
     return uri
 
 
@@ -157,7 +186,7 @@ def _transcribe_chunk(
         finish = finish_reason_name(response)
         new_segments, _ = parse_segments(response_text(response))
         segments, added = merge_segments(segments, new_segments)
-        _log(
+        log.info(
             f'chunk {chunk.idx} iter={iteration} finish={finish} '
             f'returned={len(new_segments)} added={added} total={len(segments)}'
         )
@@ -165,15 +194,15 @@ def _transcribe_chunk(
         if finish == 'STOP':
             break
         if finish == 'MAX_TOKENS' and added > 0:
-            _log(f'chunk {chunk.idx} MAX_TOKENS with progress, continuing')
+            log.info(f'chunk {chunk.idx} MAX_TOKENS with progress, continuing')
             continue
         if finish == 'MAX_TOKENS' and added == 0:
-            _log(f'warning: chunk {chunk.idx} MAX_TOKENS no new segments, stopping')
+            log.info(f'warning: chunk {chunk.idx} MAX_TOKENS no new segments, stopping')
             break
-        _log(f'warning: chunk {chunk.idx} unexpected finish={finish}, stopping')
+        log.info(f'warning: chunk {chunk.idx} unexpected finish={finish}, stopping')
         break
     else:
-        _log(f'warning: chunk {chunk.idx} reached MAX_CHUNK_CONTINUATIONS={cfg.MAX_CHUNK_CONTINUATIONS}')
+        log.info(f'warning: chunk {chunk.idx} reached MAX_CHUNK_CONTINUATIONS={cfg.MAX_CHUNK_CONTINUATIONS}')
 
     # Premature-stop retry
     for retry in range(cfg.PREMATURE_STOP_RETRIES):
@@ -181,7 +210,7 @@ def _transcribe_chunk(
         if last_sec is None or last_sec >= chunk.duration - cfg.PREMATURE_STOP_GAP_SECONDS:
             break
         gap = chunk.duration - last_sec
-        _log(f'chunk {chunk.idx} premature stop retry={retry+1} last_ts={last_sec:.1f}s gap={gap:.1f}s')
+        log.info(f'chunk {chunk.idx} premature stop retry={retry+1} last_ts={last_sec:.1f}s gap={gap:.1f}s')
 
         for iteration in range(1, cfg.MAX_CHUNK_CONTINUATIONS + 1):
             prompt = build_prompt(
@@ -197,7 +226,7 @@ def _transcribe_chunk(
             finish = finish_reason_name(response)
             new_segments, _ = parse_segments(response_text(response))
             segments, added = merge_segments(segments, new_segments)
-            _log(
+            log.info(
                 f'chunk {chunk.idx} premature-retry iter={iteration} finish={finish} '
                 f'returned={len(new_segments)} added={added} total={len(segments)}'
             )
@@ -250,8 +279,4 @@ def _write_output(output_path: Path, result: TranscriptResult, usage: TokenUsage
             {**result.model_dump(mode='json'), 'token_usage': usage.summary()},
             f, ensure_ascii=False, indent=2,
         )
-    _log(f'saved output={output_path}')
-
-
-def _log(message: str) -> None:
-    print(f'[{utc_now()}] [stt] {message}', flush=True)
+    log.info(f'saved output={output_path}')

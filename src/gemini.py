@@ -6,10 +6,12 @@ from google import genai
 from google.genai import types
 
 import src.config as cfg
+from src.logging_setup import get_logger
 from src.models import TranscriptResult, TranscriptSegment
-from src.utils import finish_reason_name, is_transient_error, response_text, sleep_before_retry, utc_now
+from src.utils import is_transient_error, sleep_before_retry
 
 client = genai.Client()
+log = get_logger('gemini')
 
 BASE_PROMPT = """
 Process the audio file and generate a detailed transcription.
@@ -112,7 +114,7 @@ def call_gemini(audio_file_uri: str, prompt: str) -> object:
             )
         except Exception as error:
             will_retry = attempt < cfg.GEMINI_TRANSIENT_RETRIES and is_transient_error(error)
-            _log(f'error attempt={attempt} type={type(error).__name__} will_retry={will_retry}')
+            log.info(f'error attempt={attempt} type={type(error).__name__} will_retry={will_retry}')
             if not will_retry:
                 raise
             sleep_before_retry(attempt + 1, cfg.GEMINI_TRANSIENT_RETRY_DELAY)
@@ -122,7 +124,3 @@ def call_gemini(audio_file_uri: str, prompt: str) -> object:
 def upload_audio(path: str) -> str:
     audio_file = client.files.upload(file=path)
     return audio_file.uri
-
-
-def _log(message: str) -> None:
-    print(f'[{utc_now()}] [gemini] {message}', flush=True)
