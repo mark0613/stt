@@ -29,6 +29,17 @@ uv run python main.py <音檔路徑> [輸出目錄]
 uv run python main.py <音檔路徑>
 ```
 
+### 選用參數
+
+| 參數 | 說明 |
+|------|------|
+| `-n`, `--num-speakers` | 說話者人數，會帶入 prompt 協助辨識 |
+| `-p`, `--prompt` | 額外說明（例如主題、講者姓名），會帶入 prompt |
+
+```bash
+uv run python main.py meeting.mp3 -n 3 -p "這是一場關於 AI 的訪談"
+```
+
 ## 設定 .env
 
 ### 必填

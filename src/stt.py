@@ -66,6 +66,8 @@ class TokenUsage:
 def transcribe(
     audio_path: str | Path,
     output_path: str | Path | None = None,
+    speaker_count: int | None = None,
+    extra_instructions: str | None = None,
 ) -> TranscriptResult:
     audio_path = Path(audio_path)
     usage = TokenUsage()
@@ -90,7 +92,10 @@ def transcribe(
                 _to_local_ts(all_segments[-cfg.TAIL_CONTEXT_SEGMENTS:], chunk.start_sec)
                 if all_segments else []
             )
-            chunk_segments = _transcribe_chunk(chunk, chunk_uris[chunk.idx], tail_context, usage)
+            chunk_segments = _transcribe_chunk(
+                chunk, chunk_uris[chunk.idx], tail_context, usage,
+                speaker_count=speaker_count, extra_instructions=extra_instructions,
+            )
             _log(f'chunk {chunk.idx} got {len(chunk_segments)} segments before merge')
 
             offset_segments = _offset_segments(chunk_segments, chunk.start_sec)
@@ -132,6 +137,8 @@ def _transcribe_chunk(
     audio_uri: str,
     tail_context: list[TranscriptSegment],
     usage: TokenUsage,
+    speaker_count: int | None = None,
+    extra_instructions: str | None = None,
 ) -> list[TranscriptSegment]:
     segments: list[TranscriptSegment] = []
 
@@ -141,6 +148,8 @@ def _transcribe_chunk(
             tail_context=cursor_ctx,
             cursor=_last_ts(segments),
             is_continuation=bool(segments),
+            speaker_count=speaker_count,
+            extra_instructions=extra_instructions,
         )
         response = call_gemini(audio_uri, prompt)
         usage.add(getattr(response, 'usage_metadata', None))
@@ -179,6 +188,8 @@ def _transcribe_chunk(
                 tail_context=segments[-8:],
                 cursor=_last_ts(segments),
                 is_continuation=True,
+                speaker_count=speaker_count,
+                extra_instructions=extra_instructions,
             )
             response = call_gemini(audio_uri, prompt)
             usage.add(getattr(response, 'usage_metadata', None))

@@ -29,9 +29,13 @@ def build_prompt(
     tail_context: list[TranscriptSegment],
     cursor: str | None = None,
     is_continuation: bool = False,
+    speaker_count: int | None = None,
+    extra_instructions: str | None = None,
 ) -> str:
+    base_prompt = _augment_base_prompt(speaker_count, extra_instructions)
+
     if not tail_context and not is_continuation:
-        return BASE_PROMPT
+        return base_prompt
 
     context_json = json.dumps(
         [seg.model_dump(mode='json') for seg in tail_context],
@@ -41,7 +45,7 @@ def build_prompt(
 
     if is_continuation and cursor:
         return f"""
-{BASE_PROMPT}
+{base_prompt}
 
 Continuation instructions:
 - This is a continuation of the SAME audio chunk.
@@ -55,7 +59,7 @@ Prior context (last {len(tail_context)} segments):
 """
 
     return f"""
-{BASE_PROMPT}
+{base_prompt}
 
 Continuation instructions:
 - This audio chunk continues from a previous section.
@@ -65,6 +69,21 @@ Continuation instructions:
 Prior context (last {len(tail_context)} segments of previous chunk):
 {context_json}
 """
+
+
+def _augment_base_prompt(speaker_count: int | None, extra_instructions: str | None) -> str:
+    extras: list[str] = []
+    if speaker_count and speaker_count > 0:
+        extras.append(
+            f'7. There are {speaker_count} distinct speakers in this audio. '
+            f'Label them as Speaker 1 through Speaker {speaker_count}.'
+        )
+    if extra_instructions:
+        extras.append(f'Additional context from the user:\n{extra_instructions}')
+
+    if not extras:
+        return BASE_PROMPT
+    return BASE_PROMPT + '\n' + '\n'.join(extras) + '\n'
 
 
 def call_gemini(audio_file_uri: str, prompt: str) -> object:
