@@ -38,7 +38,8 @@ def split_audio(audio_path: Path, tmpdir: Path) -> list[Chunk]:
 
     chunks: list[Chunk] = []
     for idx, (start, end) in enumerate(zip(starts, ends), start=1):
-        chunk_path = tmpdir / f'chunk_{idx:03d}.m4a'
+        # 沿用來源副檔名，-c copy 才不會遇到 codec 塞不進容器的問題
+        chunk_path = tmpdir / f'chunk_{idx:03d}{audio_path.suffix}'
         result = _run(
             ['ffmpeg', '-y', '-ss', str(start), '-to', str(end),
              '-i', str(audio_path), '-c', 'copy', str(chunk_path)]
