@@ -23,6 +23,11 @@ class Chunk:
         return self.end_sec - self.start_sec
 
 
+def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+    # ffmpeg/ffprobe 輸出是 UTF-8，Windows 預設用 cp950 解碼會 UnicodeDecodeError
+    return subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
+
+
 def split_audio(audio_path: Path, tmpdir: Path) -> list[Chunk]:
     total_duration = audio_duration(audio_path)
     midpoints = silence_midpoints(audio_path)
@@ -34,10 +39,9 @@ def split_audio(audio_path: Path, tmpdir: Path) -> list[Chunk]:
     chunks: list[Chunk] = []
     for idx, (start, end) in enumerate(zip(starts, ends), start=1):
         chunk_path = tmpdir / f'chunk_{idx:03d}.m4a'
-        result = subprocess.run(
+        result = _run(
             ['ffmpeg', '-y', '-ss', str(start), '-to', str(end),
-             '-i', str(audio_path), '-c', 'copy', str(chunk_path)],
-            capture_output=True, text=True,
+             '-i', str(audio_path), '-c', 'copy', str(chunk_path)]
         )
         if result.returncode != 0:
             raise RuntimeError(f'ffmpeg chunk {idx} failed: {result.stderr[-500:]}')
@@ -47,20 +51,18 @@ def split_audio(audio_path: Path, tmpdir: Path) -> list[Chunk]:
 
 
 def audio_duration(audio_path: Path) -> float:
-    result = subprocess.run(
+    result = _run(
         ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
-         '-of', 'csv=p=0', str(audio_path)],
-        capture_output=True, text=True,
+         '-of', 'csv=p=0', str(audio_path)]
     )
     return float(result.stdout.strip())
 
 
 def silence_midpoints(audio_path: Path) -> list[float]:
-    result = subprocess.run(
+    result = _run(
         ['ffmpeg', '-i', str(audio_path),
          '-af', f'silencedetect=noise={cfg.SILENCE_NOISE_DB}dB:d={cfg.SILENCE_MIN_DURATION}',
-         '-f', 'null', '-'],
-        capture_output=True, text=True,
+         '-f', 'null', '-']
     )
     starts = [float(m) for m in re.findall(r'silence_start:\s*([\d.]+)', result.stderr)]
     ends = [float(m) for m in re.findall(r'silence_end:\s*([\d.]+)', result.stderr)]
