@@ -5,7 +5,7 @@ import json
 from google import genai
 from google.genai import types
 
-from . import config as cfg
+from .config import Settings
 from .logging_setup import get_logger
 from .models import TranscriptResult, TranscriptSegment
 from .utils import is_transient_error, sleep_before_retry
@@ -87,11 +87,13 @@ def _augment_base_prompt(speaker_count: int | None, extra_instructions: str | No
     return BASE_PROMPT + '\n' + '\n'.join(extras) + '\n'
 
 
-def call_gemini(client: genai.Client, audio_file_uri: str, prompt: str) -> object:
-    for attempt in range(cfg.GEMINI_TRANSIENT_RETRIES + 1):
+def call_gemini(
+    client: genai.Client, audio_file_uri: str, prompt: str, settings: Settings
+) -> object:
+    for attempt in range(settings.gemini_transient_retries + 1):
         try:
             return client.models.generate_content(
-                model=cfg.GEMINI_MODEL,
+                model=settings.gemini_model,
                 contents=[
                     types.Content(
                         parts=[
@@ -101,22 +103,22 @@ def call_gemini(client: genai.Client, audio_file_uri: str, prompt: str) -> objec
                     )
                 ],
                 config=types.GenerateContentConfig(
-                    max_output_tokens=cfg.GEMINI_MAX_OUTPUT_TOKENS,
+                    max_output_tokens=settings.gemini_max_output_tokens,
                     response_mime_type='application/json',
                     response_schema=TranscriptResult,
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=False,
-                        thinking_budget=cfg.GEMINI_THINKING_BUDGET,
+                        thinking_budget=settings.gemini_thinking_budget,
                     ),
                     temperature=0,
                 ),
             )
         except Exception as error:
-            will_retry = attempt < cfg.GEMINI_TRANSIENT_RETRIES and is_transient_error(error)
+            will_retry = attempt < settings.gemini_transient_retries and is_transient_error(error)
             log.info(f'error attempt={attempt} type={type(error).__name__} will_retry={will_retry}')
             if not will_retry:
                 raise
-            sleep_before_retry(attempt + 1, cfg.GEMINI_TRANSIENT_RETRY_DELAY)
+            sleep_before_retry(attempt + 1, settings.gemini_transient_retry_delay)
     raise RuntimeError('unreachable')
 
 

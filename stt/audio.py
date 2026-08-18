@@ -5,7 +5,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config as cfg
+from .config import Settings
 from .logging_setup import get_logger
 
 log = get_logger('audio')
@@ -28,10 +28,10 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
 
 
-def split_audio(audio_path: Path, tmpdir: Path) -> list[Chunk]:
+def split_audio(audio_path: Path, tmpdir: Path, settings: Settings) -> list[Chunk]:
     total_duration = audio_duration(audio_path)
-    midpoints = silence_midpoints(audio_path)
-    cut_points = choose_cut_points(midpoints, total_duration)
+    midpoints = silence_midpoints(audio_path, settings)
+    cut_points = choose_cut_points(midpoints, total_duration, settings)
 
     starts = [0.0] + cut_points
     ends = cut_points + [total_duration]
@@ -78,14 +78,14 @@ def audio_duration(audio_path: Path) -> float:
     return float(result.stdout.strip())
 
 
-def silence_midpoints(audio_path: Path) -> list[float]:
+def silence_midpoints(audio_path: Path, settings: Settings) -> list[float]:
     result = _run(
         [
             'ffmpeg',
             '-i',
             str(audio_path),
             '-af',
-            f'silencedetect=noise={cfg.SILENCE_NOISE_DB}dB:d={cfg.SILENCE_MIN_DURATION}',
+            f'silencedetect=noise={settings.silence_noise_db}dB:d={settings.silence_min_duration}',
             '-f',
             'null',
             '-',
@@ -96,28 +96,30 @@ def silence_midpoints(audio_path: Path) -> list[float]:
     return [(s + e) / 2 for s, e in zip(starts, ends)]
 
 
-def choose_cut_points(midpoints: list[float], total_duration: float) -> list[float]:
-    if not midpoints or total_duration <= cfg.TARGET_CHUNK_SECONDS:
+def choose_cut_points(
+    midpoints: list[float], total_duration: float, settings: Settings
+) -> list[float]:
+    if not midpoints or total_duration <= settings.target_chunk_seconds:
         return []
 
     cut_points: list[float] = []
     cursor = 0.0
 
-    while cursor < total_duration - cfg.TARGET_CHUNK_SECONDS * 0.5:
-        target = cursor + cfg.TARGET_CHUNK_SECONDS
+    while cursor < total_duration - settings.target_chunk_seconds * 0.5:
+        target = cursor + settings.target_chunk_seconds
         if target >= total_duration:
             break
 
-        candidates = [p for p in midpoints if cursor < p <= cursor + cfg.MAX_CHUNK_SECONDS]
+        candidates = [p for p in midpoints if cursor < p <= cursor + settings.max_chunk_seconds]
         if candidates:
             best = min(candidates, key=lambda p: abs(p - target))
             cut_points.append(best)
             log.info(f'cut at silence={best:.1f}s (target={target:.1f}s, cursor={cursor:.1f}s)')
             cursor = best
         else:
-            hard_cut = cursor + cfg.TARGET_CHUNK_SECONDS
+            hard_cut = cursor + settings.target_chunk_seconds
             log.info(
-                f'warning: no silence within {cfg.MAX_CHUNK_SECONDS}s of cursor={cursor:.1f}s, hard-cutting at {hard_cut:.1f}s'
+                f'warning: no silence within {settings.max_chunk_seconds}s of cursor={cursor:.1f}s, hard-cutting at {hard_cut:.1f}s'
             )
             cut_points.append(hard_cut)
             cursor = hard_cut

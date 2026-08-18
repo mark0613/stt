@@ -10,8 +10,8 @@ from threading import Lock
 
 from google import genai
 
-from . import config as cfg
 from .audio import Chunk, split_audio
+from .config import Settings
 from .gemini import build_prompt, call_gemini, upload_audio
 from .logging_setup import get_logger
 from .models import TranscriptResult, TranscriptSegment
@@ -64,11 +64,11 @@ class TokenUsage:
             self.thinking_tokens += getattr(usage_metadata, 'thoughts_token_count', 0) or 0
             self._calls += 1
 
-    def summary(self) -> dict:
+    def summary(self, settings: Settings) -> dict:
         total_output = self.output_tokens + self.thinking_tokens
         cost_usd = (
-            self.prompt_tokens / 1_000_000 * cfg.AUDIO_INPUT_PRICE_PER_M
-            + total_output / 1_000_000 * cfg.OUTPUT_PRICE_PER_M
+            self.prompt_tokens / 1_000_000 * settings.audio_input_price_per_m
+            + total_output / 1_000_000 * settings.output_price_per_m
         )
         return {
             'calls': self._calls,
@@ -76,11 +76,11 @@ class TokenUsage:
             'output_tokens': self.output_tokens,
             'thinking_tokens': self.thinking_tokens,
             'estimated_usd': round(cost_usd, 4),
-            'estimated_twd': round(cost_usd * cfg.USD_TO_TWD, 2),
+            'estimated_twd': round(cost_usd * settings.usd_to_twd, 2),
         }
 
-    def log(self) -> None:
-        s = self.summary()
+    def log(self, settings: Settings) -> None:
+        s = self.summary(settings)
         log.info(
             f'[token usage] calls={s["calls"]} '
             f'prompt={s["prompt_tokens"]} output={s["output_tokens"]} '
@@ -96,16 +96,18 @@ def transcribe(
     extra_instructions: str | None = None,
     hooks: ProgressHooks | None = None,
     client: genai.Client | None = None,
+    settings: Settings | None = None,
 ) -> TranscriptResult:
     audio_path = Path(audio_path)
     hooks = hooks or ProgressHooks()
     client = client or genai.Client()
+    settings = settings or Settings()
     usage = TokenUsage()
 
     log.info(f'start audio={audio_path}')
 
     with tempfile.TemporaryDirectory(prefix='stt_chunks_') as tmpdir:
-        chunks = split_audio(audio_path, Path(tmpdir))
+        chunks = split_audio(audio_path, Path(tmpdir), settings)
         log.info(f'split into {len(chunks)} chunks')
         hooks.chunks_ready(len(chunks))
 
@@ -120,7 +122,7 @@ def transcribe(
                 f'start={chunk.start_sec:.1f}s end={chunk.end_sec:.1f}s duration={chunk.duration:.1f}s'
             )
             tail_context = (
-                _to_local_ts(all_segments[-cfg.TAIL_CONTEXT_SEGMENTS :], chunk.start_sec)
+                _to_local_ts(all_segments[-settings.tail_context_segments :], chunk.start_sec)
                 if all_segments
                 else []
             )
@@ -130,6 +132,7 @@ def transcribe(
                 chunk_uris[chunk.idx],
                 tail_context,
                 usage,
+                settings,
                 speaker_count=speaker_count,
                 extra_instructions=extra_instructions,
             )
@@ -140,11 +143,11 @@ def transcribe(
             log.info(f'chunk {chunk.idx} added {added} segments total={len(all_segments)}')
             hooks.chunk_done()
 
-    usage.log()
+    usage.log(settings)
 
     result = TranscriptResult(segments=all_segments)
     if output_path:
-        _write_output(Path(output_path), result, usage)
+        _write_output(Path(output_path), result, usage, settings)
 
     return result
 
@@ -176,12 +179,13 @@ def _transcribe_chunk(
     audio_uri: str,
     tail_context: list[TranscriptSegment],
     usage: TokenUsage,
+    settings: Settings,
     speaker_count: int | None = None,
     extra_instructions: str | None = None,
 ) -> list[TranscriptSegment]:
     segments: list[TranscriptSegment] = []
 
-    for iteration in range(1, cfg.MAX_CHUNK_CONTINUATIONS + 1):
+    for iteration in range(1, settings.max_chunk_continuations + 1):
         cursor_ctx = segments[-8:] if segments else tail_context
         prompt = build_prompt(
             tail_context=cursor_ctx,
@@ -190,7 +194,7 @@ def _transcribe_chunk(
             speaker_count=speaker_count,
             extra_instructions=extra_instructions,
         )
-        response = call_gemini(client, audio_uri, prompt)
+        response = call_gemini(client, audio_uri, prompt, settings)
         usage.add(getattr(response, 'usage_metadata', None))
 
         finish = finish_reason_name(response)
@@ -213,20 +217,20 @@ def _transcribe_chunk(
         break
     else:
         log.info(
-            f'warning: chunk {chunk.idx} reached MAX_CHUNK_CONTINUATIONS={cfg.MAX_CHUNK_CONTINUATIONS}'
+            f'warning: chunk {chunk.idx} reached MAX_CHUNK_CONTINUATIONS={settings.max_chunk_continuations}'
         )
 
     # Premature-stop retry
-    for retry in range(cfg.PREMATURE_STOP_RETRIES):
+    for retry in range(settings.premature_stop_retries):
         last_sec = timestamp_seconds(_last_ts(segments))
-        if last_sec is None or last_sec >= chunk.duration - cfg.PREMATURE_STOP_GAP_SECONDS:
+        if last_sec is None or last_sec >= chunk.duration - settings.premature_stop_gap_seconds:
             break
         gap = chunk.duration - last_sec
         log.info(
             f'chunk {chunk.idx} premature stop retry={retry + 1} last_ts={last_sec:.1f}s gap={gap:.1f}s'
         )
 
-        for iteration in range(1, cfg.MAX_CHUNK_CONTINUATIONS + 1):
+        for iteration in range(1, settings.max_chunk_continuations + 1):
             prompt = build_prompt(
                 tail_context=segments[-8:],
                 cursor=_last_ts(segments),
@@ -234,7 +238,7 @@ def _transcribe_chunk(
                 speaker_count=speaker_count,
                 extra_instructions=extra_instructions,
             )
-            response = call_gemini(client, audio_uri, prompt)
+            response = call_gemini(client, audio_uri, prompt, settings)
             usage.add(getattr(response, 'usage_metadata', None))
 
             finish = finish_reason_name(response)
@@ -292,11 +296,13 @@ def _last_ts(segments: list[TranscriptSegment]) -> str | None:
     return segments[-1].timestamp if segments else None
 
 
-def _write_output(output_path: Path, result: TranscriptResult, usage: TokenUsage) -> None:
+def _write_output(
+    output_path: Path, result: TranscriptResult, usage: TokenUsage, settings: Settings
+) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(
-            {**result.model_dump(mode='json'), 'token_usage': usage.summary()},
+            {**result.model_dump(mode='json'), 'token_usage': usage.summary(settings)},
             f,
             ensure_ascii=False,
             indent=2,

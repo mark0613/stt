@@ -2,9 +2,11 @@ import argparse
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
+from .config import Settings, settings_from_env
 from .logging_setup import setup_logging
 from .pipeline import ProgressHooks, transcribe
 
@@ -16,6 +18,9 @@ def main() -> None:
     parser.add_argument('-n', '--num-speakers', type=int, help='說話者人數，會帶入 prompt')
     parser.add_argument('-p', '--prompt', help='額外說明，會帶入 prompt')
     args = parser.parse_args()
+
+    load_dotenv('.env', override=True)
+    settings = settings_from_env()
 
     input_path = args.audio_file
     output_dir = args.output_dir if args.output_dir else input_path.parent
@@ -32,6 +37,7 @@ def main() -> None:
             output_path,
             speaker_count=args.num_speakers,
             extra_instructions=args.prompt,
+            settings=settings,
         )
     except Exception as error:
         console.print(f'[bold red]轉錄失敗：[/bold red]{error}')
@@ -48,6 +54,7 @@ def _run_with_progress(
     output_path: Path,
     speaker_count: int | None,
     extra_instructions: str | None,
+    settings: Settings,
 ) -> None:
     progress = Progress(
         TextColumn('[progress.description]{task.description}'),
@@ -77,6 +84,7 @@ def _run_with_progress(
             speaker_count=speaker_count,
             extra_instructions=extra_instructions,
             hooks=hooks,
+            settings=settings,
         )
 
 

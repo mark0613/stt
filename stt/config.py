@@ -1,32 +1,57 @@
+from __future__ import annotations
+
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv('.env', override=True)
+from pydantic import BaseModel, ConfigDict
 
 BASE_DIR = Path(__file__).parent.parent
 
-# Gemini model
-GEMINI_MODEL = os.getenv('GEMINI_STT_MODEL', 'gemini-3.5-flash')
-GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv('GEMINI_MAX_OUTPUT_TOKENS', '65536'))
-GEMINI_THINKING_BUDGET = int(os.getenv('GEMINI_THINKING_BUDGET', '0'))
-GEMINI_TRANSIENT_RETRIES = int(os.getenv('GEMINI_STT_TRANSIENT_RETRIES', '3'))
-GEMINI_TRANSIENT_RETRY_DELAY = int(os.getenv('GEMINI_STT_TRANSIENT_RETRY_DELAY_SECONDS', '60'))
 
-# Audio chunking
-SILENCE_NOISE_DB = float(os.getenv('CHUNKED_SILENCE_NOISE_DB', '-30'))
-SILENCE_MIN_DURATION = float(os.getenv('CHUNKED_SILENCE_MIN_DURATION', '0.5'))
-TARGET_CHUNK_SECONDS = int(os.getenv('CHUNKED_TARGET_SECONDS', '720'))
-MAX_CHUNK_SECONDS = int(os.getenv('CHUNKED_MAX_SECONDS', '1500'))
+class Settings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra='forbid')
 
-# STT pipeline
-TAIL_CONTEXT_SEGMENTS = int(os.getenv('CHUNKED_TAIL_CONTEXT_SEGMENTS', '5'))
-MAX_CHUNK_CONTINUATIONS = int(os.getenv('CHUNKED_MAX_CONTINUATIONS', '10'))
-PREMATURE_STOP_GAP_SECONDS = int(os.getenv('CHUNKED_PREMATURE_STOP_GAP', '60'))
-PREMATURE_STOP_RETRIES = int(os.getenv('CHUNKED_PREMATURE_STOP_RETRIES', '2'))
+    gemini_model: str = 'gemini-3.5-flash'
+    gemini_max_output_tokens: int = 65536
+    gemini_thinking_budget: int = 0
+    gemini_transient_retries: int = 3
+    gemini_transient_retry_delay: int = 60
 
-# Pricing
-AUDIO_INPUT_PRICE_PER_M = 3.50
-OUTPUT_PRICE_PER_M = 9.00
-USD_TO_TWD = 32.0
+    silence_noise_db: float = -30.0
+    silence_min_duration: float = 0.5
+    target_chunk_seconds: int = 720
+    max_chunk_seconds: int = 1500
+
+    tail_context_segments: int = 5
+    max_chunk_continuations: int = 10
+    premature_stop_gap_seconds: int = 60
+    premature_stop_retries: int = 2
+
+    audio_input_price_per_m: float = 3.50
+    output_price_per_m: float = 9.00
+    usd_to_twd: float = 32.0
+
+
+ENV_ALIASES = {
+    'gemini_model': 'GEMINI_STT_MODEL',
+    'gemini_max_output_tokens': 'GEMINI_MAX_OUTPUT_TOKENS',
+    'gemini_thinking_budget': 'GEMINI_THINKING_BUDGET',
+    'gemini_transient_retries': 'GEMINI_STT_TRANSIENT_RETRIES',
+    'gemini_transient_retry_delay': 'GEMINI_STT_TRANSIENT_RETRY_DELAY_SECONDS',
+    'silence_noise_db': 'CHUNKED_SILENCE_NOISE_DB',
+    'silence_min_duration': 'CHUNKED_SILENCE_MIN_DURATION',
+    'target_chunk_seconds': 'CHUNKED_TARGET_SECONDS',
+    'max_chunk_seconds': 'CHUNKED_MAX_SECONDS',
+    'tail_context_segments': 'CHUNKED_TAIL_CONTEXT_SEGMENTS',
+    'max_chunk_continuations': 'CHUNKED_MAX_CONTINUATIONS',
+    'premature_stop_gap_seconds': 'CHUNKED_PREMATURE_STOP_GAP',
+    'premature_stop_retries': 'CHUNKED_PREMATURE_STOP_RETRIES',
+}
+
+
+def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
+    # 空字串視同沒設定，否則 .env 裡留空的變數會讓 pydantic 轉型失敗
+    env = os.environ if env is None else env
+    overrides = {field: env[key] for field, key in ENV_ALIASES.items() if env.get(key)}
+    return Settings(**overrides)
