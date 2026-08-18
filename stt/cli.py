@@ -5,8 +5,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
-from stt import ProgressHooks, transcribe
-from stt.logging_setup import setup_logging
+from .logging_setup import setup_logging
+from .pipeline import ProgressHooks, transcribe
 
 
 def main() -> None:
