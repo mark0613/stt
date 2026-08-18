@@ -2,11 +2,8 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
-
-BASE_DIR = Path(__file__).parent.parent
 
 
 class Settings(BaseModel):

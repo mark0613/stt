@@ -4,14 +4,12 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from . import config as cfg
-
 LOGGER_NAME = 'stt'
 
 
-def setup_logging(audio_path: Path) -> Path:
-    """Route detailed logs to a file under <repo>/logs/. Returns the log file path."""
-    logs_dir = cfg.BASE_DIR / 'logs'
+def setup_logging(audio_path: Path, logs_dir: Path | None = None) -> Path:
+    """Route detailed logs to a file under logs_dir (default <cwd>/logs). Returns the log file path."""
+    logs_dir = logs_dir or Path.cwd() / 'logs'
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
