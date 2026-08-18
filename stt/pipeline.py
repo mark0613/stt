@@ -8,12 +8,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
 
-import src.config as cfg
-from src.audio import Chunk, split_audio
-from src.gemini import build_prompt, call_gemini, upload_audio
-from src.logging_setup import get_logger
-from src.models import TranscriptResult, TranscriptSegment
-from src.utils import (
+from . import config as cfg
+from .audio import Chunk, split_audio
+from .gemini import build_prompt, call_gemini, upload_audio
+from .logging_setup import get_logger
+from .models import TranscriptResult, TranscriptSegment
+from .utils import (
     finish_reason_name,
     merge_segments,
     parse_segments,

@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-import src.config as cfg
+from . import config as cfg
 
 LOGGER_NAME = 'stt'
 

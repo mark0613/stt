@@ -5,10 +5,10 @@ import json
 from google import genai
 from google.genai import types
 
-import src.config as cfg
-from src.logging_setup import get_logger
-from src.models import TranscriptResult, TranscriptSegment
-from src.utils import is_transient_error, sleep_before_retry
+from . import config as cfg
+from .logging_setup import get_logger
+from .models import TranscriptResult, TranscriptSegment
+from .utils import is_transient_error, sleep_before_retry
 
 client = genai.Client()
 log = get_logger('gemini')

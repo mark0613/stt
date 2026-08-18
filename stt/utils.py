@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.models import TranscriptSegment, TranscriptState, TranscriptStateEvent
+from .models import TranscriptSegment, TranscriptState, TranscriptStateEvent
 
 TIMESTAMP_RE = re.compile(r'\d+(?::\d{1,2}){1,2}(?:\.\d+)?')
 FILLER_PUNCTUATION_RE = re.compile(r'[\s,，.。、!?！？;；:：…~～"\'「」『』（）()\\-]+')

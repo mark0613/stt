@@ -5,8 +5,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-import src.config as cfg
-from src.logging_setup import get_logger
+from . import config as cfg
+from .logging_setup import get_logger
 
 log = get_logger('audio')
 
