@@ -10,7 +10,6 @@ from .logging_setup import get_logger
 from .models import TranscriptResult, TranscriptSegment
 from .utils import is_transient_error, sleep_before_retry
 
-client = genai.Client()
 log = get_logger('gemini')
 
 BASE_PROMPT = """
@@ -88,7 +87,7 @@ def _augment_base_prompt(speaker_count: int | None, extra_instructions: str | No
     return BASE_PROMPT + '\n' + '\n'.join(extras) + '\n'
 
 
-def call_gemini(audio_file_uri: str, prompt: str) -> object:
+def call_gemini(client: genai.Client, audio_file_uri: str, prompt: str) -> object:
     for attempt in range(cfg.GEMINI_TRANSIENT_RETRIES + 1):
         try:
             return client.models.generate_content(
@@ -121,6 +120,6 @@ def call_gemini(audio_file_uri: str, prompt: str) -> object:
     raise RuntimeError('unreachable')
 
 
-def upload_audio(path: str) -> str:
+def upload_audio(client: genai.Client, path: str) -> str:
     audio_file = client.files.upload(file=path)
     return audio_file.uri

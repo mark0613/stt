@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
 
+from google import genai
+
 from . import config as cfg
 from .audio import Chunk, split_audio
 from .gemini import build_prompt, call_gemini, upload_audio
@@ -93,9 +95,11 @@ def transcribe(
     speaker_count: int | None = None,
     extra_instructions: str | None = None,
     hooks: ProgressHooks | None = None,
+    client: genai.Client | None = None,
 ) -> TranscriptResult:
     audio_path = Path(audio_path)
     hooks = hooks or ProgressHooks()
+    client = client or genai.Client()
     usage = TokenUsage()
 
     log.info(f'start audio={audio_path}')
@@ -107,7 +111,7 @@ def transcribe(
 
         # Upload all chunks in parallel, then transcribe in order
         # (transcription is sequential to preserve tail_context continuity)
-        chunk_uris = _upload_chunks_parallel(chunks, hooks)
+        chunk_uris = _upload_chunks_parallel(client, chunks, hooks)
 
         all_segments: list[TranscriptSegment] = []
         for chunk in chunks:
@@ -121,6 +125,7 @@ def transcribe(
                 else []
             )
             chunk_segments = _transcribe_chunk(
+                client,
                 chunk,
                 chunk_uris[chunk.idx],
                 tail_context,
@@ -144,11 +149,13 @@ def transcribe(
     return result
 
 
-def _upload_chunks_parallel(chunks: list[Chunk], hooks: ProgressHooks) -> dict[int, str]:
+def _upload_chunks_parallel(
+    client: genai.Client, chunks: list[Chunk], hooks: ProgressHooks
+) -> dict[int, str]:
     """Upload all chunks concurrently. Returns {chunk.idx: uri}."""
     uris: dict[int, str] = {}
     with ThreadPoolExecutor(max_workers=len(chunks)) as executor:
-        futures = {executor.submit(_upload_one, chunk): chunk for chunk in chunks}
+        futures = {executor.submit(_upload_one, client, chunk): chunk for chunk in chunks}
         for future in as_completed(futures):
             chunk = futures[future]
             uris[chunk.idx] = future.result()
@@ -156,14 +163,15 @@ def _upload_chunks_parallel(chunks: list[Chunk], hooks: ProgressHooks) -> dict[i
     return uris
 
 
-def _upload_one(chunk: Chunk) -> str:
+def _upload_one(client: genai.Client, chunk: Chunk) -> str:
     log.info(f'chunk {chunk.idx} upload start path={chunk.path}')
-    uri = upload_audio(str(chunk.path))
+    uri = upload_audio(client, str(chunk.path))
     log.info(f'chunk {chunk.idx} upload complete uri={uri}')
     return uri
 
 
 def _transcribe_chunk(
+    client: genai.Client,
     chunk: Chunk,
     audio_uri: str,
     tail_context: list[TranscriptSegment],
@@ -182,7 +190,7 @@ def _transcribe_chunk(
             speaker_count=speaker_count,
             extra_instructions=extra_instructions,
         )
-        response = call_gemini(audio_uri, prompt)
+        response = call_gemini(client, audio_uri, prompt)
         usage.add(getattr(response, 'usage_metadata', None))
 
         finish = finish_reason_name(response)
@@ -226,7 +234,7 @@ def _transcribe_chunk(
                 speaker_count=speaker_count,
                 extra_instructions=extra_instructions,
             )
-            response = call_gemini(audio_uri, prompt)
+            response = call_gemini(client, audio_uri, prompt)
             usage.add(getattr(response, 'usage_metadata', None))
 
             finish = finish_reason_name(response)
