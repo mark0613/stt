@@ -41,8 +41,19 @@ def split_audio(audio_path: Path, tmpdir: Path) -> list[Chunk]:
         # 沿用來源副檔名，-c copy 才不會遇到 codec 塞不進容器的問題
         chunk_path = tmpdir / f'chunk_{idx:03d}{audio_path.suffix}'
         result = _run(
-            ['ffmpeg', '-y', '-ss', str(start), '-to', str(end),
-             '-i', str(audio_path), '-c', 'copy', str(chunk_path)]
+            [
+                'ffmpeg',
+                '-y',
+                '-ss',
+                str(start),
+                '-to',
+                str(end),
+                '-i',
+                str(audio_path),
+                '-c',
+                'copy',
+                str(chunk_path),
+            ]
         )
         if result.returncode != 0:
             raise RuntimeError(f'ffmpeg chunk {idx} failed: {result.stderr[-500:]}')
@@ -53,17 +64,32 @@ def split_audio(audio_path: Path, tmpdir: Path) -> list[Chunk]:
 
 def audio_duration(audio_path: Path) -> float:
     result = _run(
-        ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
-         '-of', 'csv=p=0', str(audio_path)]
+        [
+            'ffprobe',
+            '-v',
+            'quiet',
+            '-show_entries',
+            'format=duration',
+            '-of',
+            'csv=p=0',
+            str(audio_path),
+        ]
     )
     return float(result.stdout.strip())
 
 
 def silence_midpoints(audio_path: Path) -> list[float]:
     result = _run(
-        ['ffmpeg', '-i', str(audio_path),
-         '-af', f'silencedetect=noise={cfg.SILENCE_NOISE_DB}dB:d={cfg.SILENCE_MIN_DURATION}',
-         '-f', 'null', '-']
+        [
+            'ffmpeg',
+            '-i',
+            str(audio_path),
+            '-af',
+            f'silencedetect=noise={cfg.SILENCE_NOISE_DB}dB:d={cfg.SILENCE_MIN_DURATION}',
+            '-f',
+            'null',
+            '-',
+        ]
     )
     starts = [float(m) for m in re.findall(r'silence_start:\s*([\d.]+)', result.stderr)]
     ends = [float(m) for m in re.findall(r'silence_end:\s*([\d.]+)', result.stderr)]
@@ -90,7 +116,9 @@ def choose_cut_points(midpoints: list[float], total_duration: float) -> list[flo
             cursor = best
         else:
             hard_cut = cursor + cfg.TARGET_CHUNK_SECONDS
-            log.info(f'warning: no silence within {cfg.MAX_CHUNK_SECONDS}s of cursor={cursor:.1f}s, hard-cutting at {hard_cut:.1f}s')
+            log.info(
+                f'warning: no silence within {cfg.MAX_CHUNK_SECONDS}s of cursor={cursor:.1f}s, hard-cutting at {hard_cut:.1f}s'
+            )
             cut_points.append(hard_cut)
             cursor = hard_cut
 

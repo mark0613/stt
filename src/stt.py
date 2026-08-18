@@ -116,12 +116,17 @@ def transcribe(
                 f'start={chunk.start_sec:.1f}s end={chunk.end_sec:.1f}s duration={chunk.duration:.1f}s'
             )
             tail_context = (
-                _to_local_ts(all_segments[-cfg.TAIL_CONTEXT_SEGMENTS:], chunk.start_sec)
-                if all_segments else []
+                _to_local_ts(all_segments[-cfg.TAIL_CONTEXT_SEGMENTS :], chunk.start_sec)
+                if all_segments
+                else []
             )
             chunk_segments = _transcribe_chunk(
-                chunk, chunk_uris[chunk.idx], tail_context, usage,
-                speaker_count=speaker_count, extra_instructions=extra_instructions,
+                chunk,
+                chunk_uris[chunk.idx],
+                tail_context,
+                usage,
+                speaker_count=speaker_count,
+                extra_instructions=extra_instructions,
             )
             log.info(f'chunk {chunk.idx} got {len(chunk_segments)} segments before merge')
 
@@ -143,10 +148,7 @@ def _upload_chunks_parallel(chunks: list[Chunk], hooks: ProgressHooks) -> dict[i
     """Upload all chunks concurrently. Returns {chunk.idx: uri}."""
     uris: dict[int, str] = {}
     with ThreadPoolExecutor(max_workers=len(chunks)) as executor:
-        futures = {
-            executor.submit(_upload_one, chunk): chunk
-            for chunk in chunks
-        }
+        futures = {executor.submit(_upload_one, chunk): chunk for chunk in chunks}
         for future in as_completed(futures):
             chunk = futures[future]
             uris[chunk.idx] = future.result()
@@ -202,7 +204,9 @@ def _transcribe_chunk(
         log.info(f'warning: chunk {chunk.idx} unexpected finish={finish}, stopping')
         break
     else:
-        log.info(f'warning: chunk {chunk.idx} reached MAX_CHUNK_CONTINUATIONS={cfg.MAX_CHUNK_CONTINUATIONS}')
+        log.info(
+            f'warning: chunk {chunk.idx} reached MAX_CHUNK_CONTINUATIONS={cfg.MAX_CHUNK_CONTINUATIONS}'
+        )
 
     # Premature-stop retry
     for retry in range(cfg.PREMATURE_STOP_RETRIES):
@@ -210,7 +214,9 @@ def _transcribe_chunk(
         if last_sec is None or last_sec >= chunk.duration - cfg.PREMATURE_STOP_GAP_SECONDS:
             break
         gap = chunk.duration - last_sec
-        log.info(f'chunk {chunk.idx} premature stop retry={retry+1} last_ts={last_sec:.1f}s gap={gap:.1f}s')
+        log.info(
+            f'chunk {chunk.idx} premature stop retry={retry + 1} last_ts={last_sec:.1f}s gap={gap:.1f}s'
+        )
 
         for iteration in range(1, cfg.MAX_CHUNK_CONTINUATIONS + 1):
             prompt = build_prompt(
@@ -239,7 +245,9 @@ def _transcribe_chunk(
     return segments
 
 
-def _offset_segments(segments: list[TranscriptSegment], start_sec: float) -> list[TranscriptSegment]:
+def _offset_segments(
+    segments: list[TranscriptSegment], start_sec: float
+) -> list[TranscriptSegment]:
     result = []
     for seg in segments:
         local_sec = timestamp_seconds(seg.timestamp)
@@ -250,14 +258,18 @@ def _offset_segments(segments: list[TranscriptSegment], start_sec: float) -> lis
     return result
 
 
-def _to_local_ts(segments: list[TranscriptSegment], chunk_start_sec: float) -> list[TranscriptSegment]:
+def _to_local_ts(
+    segments: list[TranscriptSegment], chunk_start_sec: float
+) -> list[TranscriptSegment]:
     result = []
     for seg in segments:
         global_sec = timestamp_seconds(seg.timestamp)
         if global_sec is None:
             result.append(seg)
             continue
-        result.append(seg.model_copy(update={'timestamp': _fmt_ts(max(0.0, global_sec - chunk_start_sec))}))
+        result.append(
+            seg.model_copy(update={'timestamp': _fmt_ts(max(0.0, global_sec - chunk_start_sec))})
+        )
     return result
 
 
@@ -277,6 +289,8 @@ def _write_output(output_path: Path, result: TranscriptResult, usage: TokenUsage
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(
             {**result.model_dump(mode='json'), 'token_usage': usage.summary()},
-            f, ensure_ascii=False, indent=2,
+            f,
+            ensure_ascii=False,
+            indent=2,
         )
     log.info(f'saved output={output_path}')
