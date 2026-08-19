@@ -9,24 +9,26 @@
 - 🔄 **自動續跑**：遇到輸出 token 上限或提前截止時自動重試，確保每塊都轉完
 - 💰 **費用追蹤**：輸出 JSON 附本次 API 用量與估算費用（USD / TWD）
 
-## 安裝與使用
+## 前置需求
 
-### 安裝
-需要先安裝 [ffmpeg](https://ffmpeg.org/download.html) 並加入 PATH。
+[ffmpeg](https://ffmpeg.org/download.html) 必須先安裝並加入 PATH。
+
+ffmpeg 是外部執行檔，不會隨套件一起安裝。當成套件使用時，呼叫端的執行環境（含 Docker 容器、CI runner）必須自己準備好 ffmpeg，否則會在切塊那一步失敗。
+
+## 當成指令使用
 
 ```bash
 uv sync
 cp .env.example .env  # 填入 GOOGLE_API_KEY
 ```
 
-## 使用
 ```bash
-uv run python main.py <音檔路徑> [輸出目錄]
+uv run stt <音檔路徑> [輸出目錄]
 ```
 
 如果沒帶輸出目錄，會與音檔路徑同個目錄建立 json
 ```bash
-uv run python main.py <音檔路徑>
+uv run stt <音檔路徑>
 ```
 
 ### 選用參數
@@ -37,10 +39,85 @@ uv run python main.py <音檔路徑>
 | `-p`, `--prompt` | 額外說明（例如主題、講者姓名），會帶入 prompt |
 
 ```bash
-uv run python main.py meeting.mp3 -n 3 -p "這是一場關於 AI 的訪談"
+uv run stt meeting.mp3 -n 3 -p "這是一場關於 AI 的訪談"
+```
+
+## 當成套件使用
+
+### 安裝
+
+尚未發佈到 PyPI，也還沒有 tag，請直接釘 commit SHA：
+
+```bash
+uv add "stt @ git+ssh://git@github.com/mark0613/stt.git@<commit-sha>"
+```
+
+### 最小範例
+
+```python
+from google import genai
+from stt import transcribe
+
+result = transcribe('meeting.mp3', client=genai.Client(api_key='...'))
+
+for segment in result.segments:
+    print(segment.timestamp, segment.speaker, segment.content)
+```
+
+`transcribe()` 不會讀取任何環境變數，也不會自己建立目錄或設定 logging。API 金鑰、參數、進度回報全部由呼叫端傳入。
+
+### 完整參數
+
+```python
+from google import genai
+from stt import ProgressHooks, Settings, transcribe
+
+result = transcribe(
+    'meeting.mp3',
+    output_path='meeting.json',  # 不給就只回傳結果，不寫檔
+    speaker_count=3,
+    extra_instructions='這是一場關於 AI 的訪談',
+    client=genai.Client(api_key='...'),
+    settings=Settings(target_chunk_seconds=480),
+    hooks=ProgressHooks(
+        on_chunks_ready=lambda total: print(f'共 {total} 塊'),
+        on_upload_done=lambda: print('上傳完一塊'),
+        on_chunk_done=lambda: print('轉錄完一塊'),
+    ),
+)
+```
+
+### 回傳值
+
+`TranscriptResult.segments` 是一串 `TranscriptSegment`，每一段有 `speaker`、`timestamp`、`content`、`lang_code` 四個欄位。時間戳已經換算成整支音檔的絕對時間。
+
+有指定 `output_path` 時會另外寫出 JSON，內容除了 `segments` 還附上本次的 `token_usage`。
+
+### 調整參數
+
+`Settings` 是 frozen 的 pydantic model，不傳就全部使用預設值。大部分欄位對應到下方的環境變數（對照表在 `stt.config.ENV_ALIASES`），費用估算用的 `audio_input_price_per_m`、`output_price_per_m`、`usd_to_twd` 沒有對應的環境變數，只能用程式碼傳入。
+
+如果呼叫端也想沿用環境變數，可以自己讀進來：
+
+```python
+from stt import settings_from_env
+
+settings = settings_from_env()  # 預設讀 os.environ，也可以傳入自己的 mapping
+```
+
+### 記錄 log
+
+套件只在 `stt` 這個 logger 上掛了 `NullHandler`，不會動到呼叫端的 logging 設定。想看細節自己接：
+
+```python
+import logging
+
+logging.getLogger('stt').setLevel(logging.INFO)
 ```
 
 ## 設定 .env
+
+以下環境變數只影響 CLI。library 呼叫端請直接傳 `Settings`，不會受環境變數影響。
 
 ### 必填
 
