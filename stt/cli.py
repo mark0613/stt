@@ -1,8 +1,10 @@
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+from google import genai
 from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
@@ -22,12 +24,19 @@ def main() -> None:
     load_dotenv('.env', override=True)
     settings = settings_from_env()
 
+    console = Console()
+
+    api_key = os.environ.get('GOOGLE_API_KEY')
+    if not api_key:
+        console.print('[bold red]缺少 GOOGLE_API_KEY[/bold red]，請在 .env 或環境變數中設定')
+        sys.exit(1)
+    client = genai.Client(api_key=api_key)
+
     input_path = args.audio_file
     output_dir = args.output_dir if args.output_dir else input_path.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f'{input_path.stem}.json'
 
-    console = Console()
     log_path = setup_logging(input_path)
 
     try:
@@ -37,6 +46,7 @@ def main() -> None:
             output_path,
             speaker_count=args.num_speakers,
             extra_instructions=args.prompt,
+            client=client,
             settings=settings,
         )
     except Exception as error:
@@ -54,6 +64,7 @@ def _run_with_progress(
     output_path: Path,
     speaker_count: int | None,
     extra_instructions: str | None,
+    client: genai.Client,
     settings: Settings,
 ) -> None:
     progress = Progress(
@@ -84,6 +95,7 @@ def _run_with_progress(
             speaker_count=speaker_count,
             extra_instructions=extra_instructions,
             hooks=hooks,
+            client=client,
             settings=settings,
         )
 
