@@ -2,139 +2,16 @@ import json
 import re
 import time
 from collections import Counter
-from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
-from .models import TranscriptSegment, TranscriptState, TranscriptStateEvent
+from .models import TranscriptSegment
 
 TIMESTAMP_RE = re.compile(r'\d+(?::\d{1,2}){1,2}(?:\.\d+)?')
 FILLER_PUNCTUATION_RE = re.compile(r'[\s,，.。、!?！？;；:：…~～"\'「」『』（）()\\-]+')
-
-
-def default_state_path(audio_path: Path) -> Path:
-    return audio_path.with_name(f'{audio_path.stem}-tmp.json')
-
-
-def load_state(
-    state_path: Path,
-    audio_path: Path,
-    output_path: Path | None,
-    *,
-    model: str,
-    max_output_tokens: int,
-) -> TranscriptState:
-    source_audio = resolved_path(audio_path)
-    output = resolved_path(output_path) if output_path else None
-
-    if not state_path.exists():
-        return TranscriptState(
-            source_audio=source_audio,
-            output_path=output,
-            model=model,
-            max_output_tokens=max_output_tokens,
-            created_at=utc_now(),
-            updated_at=utc_now(),
-        )
-
-    with open(state_path, encoding='utf-8') as f:
-        state = TranscriptState.model_validate(json.load(f))
-
-    if state.source_audio and state.source_audio != source_audio:
-        raise ValueError(
-            f'Resume state {state_path} belongs to {state.source_audio}, not {source_audio}.'
-        )
-
-    return refresh_state(
-        state,
-        output_path=output or state.output_path,
-        model=model,
-        max_output_tokens=max_output_tokens,
-    )
-
-
-def refresh_state(
-    state: TranscriptState,
-    *,
-    output_path: str | None = None,
-    model: str | None = None,
-    max_output_tokens: int | None = None,
-) -> TranscriptState:
-    segments = clean_segments(state.segments)
-    data = state.model_dump(mode='python')
-    data.update(
-        {
-            'output_path': output_path,
-            'model': model or state.model,
-            'max_output_tokens': max_output_tokens or state.max_output_tokens,
-            'updated_at': utc_now(),
-            'saved_until_timestamp': last_timestamp(segments),
-            'saved_segment_count': len(segments),
-            'segments': segments,
-        }
-    )
-    return TranscriptState.model_validate(data)
-
-
-def mark_in_progress(state: TranscriptState) -> TranscriptState:
-    data = state.model_dump(mode='python')
-    data.update({'status': 'in_progress', 'updated_at': utc_now()})
-    return TranscriptState.model_validate(data)
-
-
-def set_uploaded_file_uri(state: TranscriptState, uploaded_file_uri: str) -> TranscriptState:
-    data = state.model_dump(mode='python')
-    data.update({'uploaded_file_uri': uploaded_file_uri, 'updated_at': utc_now()})
-    return TranscriptState.model_validate(data)
-
-
-def update_state(
-    state: TranscriptState,
-    *,
-    status: str,
-    segments: list[TranscriptSegment],
-    cursor: str,
-    finish_reason: str | None,
-    event: TranscriptStateEvent,
-    model: str,
-    max_output_tokens: int,
-) -> TranscriptState:
-    data = state.model_dump(mode='python')
-    segments = clean_segments(segments)
-    data.update(
-        {
-            'status': status,
-            'model': model,
-            'max_output_tokens': max_output_tokens,
-            'updated_at': utc_now(),
-            'saved_until_timestamp': cursor,
-            'saved_segment_count': len(segments),
-            'last_finish_reason': finish_reason,
-            'segments': segments,
-            'events': [*state.events, event],
-        }
-    )
-    return TranscriptState.model_validate(data)
-
-
-def write_state(state_path: Path, state: TranscriptState) -> None:
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    scratch_path = state_path.with_name(f'{state_path.name}.writing')
-    with open(scratch_path, 'w', encoding='utf-8') as f:
-        json.dump(state.model_dump(mode='json'), f, ensure_ascii=False, indent=2)
-    scratch_path.replace(state_path)
-
-
-def status_from_finish_reason(finish_reason: str | None) -> str:
-    if finish_reason == 'STOP':
-        return 'complete'
-    if finish_reason == 'MAX_TOKENS':
-        return 'truncated'
-    return 'stopped'
 
 
 def response_text(response: Any) -> str:
@@ -333,10 +210,6 @@ def merge_segments(
     return merged, len(merged) - len(saved_segments)
 
 
-def clean_segments(segments: list[TranscriptSegment]) -> list[TranscriptSegment]:
-    return [segment for segment in segments if not is_pathological_repetition(segment.content)]
-
-
 def is_pathological_repetition(content: str) -> bool:
     compact = FILLER_PUNCTUATION_RE.sub('', content)
     if len(compact) < 200:
@@ -421,30 +294,6 @@ def timestamp_seconds(timestamp: str | None) -> float | None:
 
 def normalized_content(content: str) -> str:
     return ' '.join(content.strip().lower().split())
-
-
-def resolved_path(path: Path | None) -> str | None:
-    if path is None:
-        return None
-    return str(path.resolve())
-
-
-def utc_now() -> str:
-    return datetime.now(UTC).isoformat().replace('+00:00', 'Z')
-
-
-def jsonable(value: Any) -> Any:
-    if value is None:
-        return None
-    if isinstance(value, Enum):
-        return value.name
-    if isinstance(value, dict):
-        return {key: jsonable(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [jsonable(item) for item in value]
-    if hasattr(value, 'model_dump'):
-        return value.model_dump(mode='json', exclude_none=True)
-    return value
 
 
 def is_transient_error(error: Exception) -> bool:

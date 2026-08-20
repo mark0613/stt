@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -26,39 +26,3 @@ class TranscriptResult(BaseModel):
         default_factory=list,
         description='List of transcribed segments with speaker, timestamp, content, and language.',
     )
-
-
-class TranscriptStateEvent(BaseModel):
-    model_config = ConfigDict(extra='ignore')
-
-    iteration: int
-    created_at: str
-    cursor_before: str
-    cursor_after: str
-    finish_reason: str | None = None
-    parsed_complete_json: bool
-    segments_returned: int
-    segments_added: int
-    saved_segment_count: int
-    response_id: str | None = None
-    model_version: str | None = None
-    usage_metadata: Any = None
-
-
-class TranscriptState(BaseModel):
-    model_config = ConfigDict(extra='ignore')
-
-    schema_version: int = 1
-    status: Literal['new', 'in_progress', 'truncated', 'complete', 'stopped'] = 'new'
-    source_audio: str
-    output_path: str | None = None
-    uploaded_file_uri: str | None = None
-    model: str
-    max_output_tokens: int
-    created_at: str
-    updated_at: str
-    saved_until_timestamp: str | None = None
-    saved_segment_count: int = 0
-    last_finish_reason: str | None = None
-    segments: list[TranscriptSegment] = Field(default_factory=list)
-    events: list[TranscriptStateEvent] = Field(default_factory=list)
