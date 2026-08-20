@@ -27,3 +27,9 @@ logs/
 .claude/skills
 .planning/
 .playwright-mcp/
+
+# Test
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
