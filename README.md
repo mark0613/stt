@@ -64,7 +64,7 @@ for segment in result.segments:
     print(segment.timestamp, segment.speaker, segment.content)
 ```
 
-`transcribe()` 不會讀取任何環境變數，也不會自己建立目錄或設定 logging。API 金鑰、參數、進度回報全部由呼叫端傳入。
+`transcribe()` 不會讀取 `.env`，也不會設定 logging，參數與進度回報都由呼叫端傳入。`client` 不傳時會呼叫 `genai.Client()`，由 google-genai 自己從環境變數讀取 `GOOGLE_API_KEY`（或 `GEMINI_API_KEY`）。有指定 `output_path` 時，會自動建立它的上層目錄。
 
 ### 完整參數
 
@@ -133,7 +133,7 @@ logging.getLogger('stt').setLevel(logging.INFO)
 | `GEMINI_MAX_OUTPUT_TOKENS` | `65536` | 單次回應最大 token 數 |
 | `GEMINI_THINKING_BUDGET` | `0` | Thinking token 預算，0 表示關閉 |
 | `GEMINI_STT_TRANSIENT_RETRIES` | `3` | 遇到 429/5xx 時的重試次數 |
-| `GEMINI_STT_TRANSIENT_RETRY_DELAY_SECONDS` | `60` | 每次重試的等待秒數 |
+| `GEMINI_STT_TRANSIENT_RETRY_DELAY_SECONDS` | `60` | 重試等待的基準秒數，第 N 次重試等待 N 倍（預設依序 60、120、180 秒） |
 
 ### 音檔切割
 
